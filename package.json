@@ -1,11 +1,10 @@
 {
-  "name": "discord-bot",
+  "name": "discord-bot-signature",
   "version": "1.0.0",
-  "description": "Bot Discord basique",
+  "description": "Bot Discord de signature",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
