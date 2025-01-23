@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - deploy-dev
 
 jobs:
   build-and-push:
@@ -18,17 +19,41 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set Docker image name
+        id: set-image
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/discord-bot:latest" >> $GITHUB_ENV
+            echo "CONTAINER_NAME=discord-bot" >> $GITHUB_ENV
+          else
+            echo "IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/discord-bot-dev:latest" >> $GITHUB_ENV
+            echo "CONTAINER_NAME=discord-bot-dev" >> $GITHUB_ENV
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/discord-bot:latest
+          tags: ${{ env.IMAGE_NAME }}
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Set environment variables
+        id: set-env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "TOKEN_NAME=DISCORD_TOKEN" >> $GITHUB_ENV
+            echo "IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/discord-bot:latest" >> $GITHUB_ENV
+            echo "CONTAINER_NAME=discord-bot" >> $GITHUB_ENV
+          else
+            echo "TOKEN_NAME=DISCORD_TOKEN_DEV" >> $GITHUB_ENV
+            echo "IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/discord-bot-dev:latest" >> $GITHUB_ENV
+            echo "CONTAINER_NAME=discord-bot-dev" >> $GITHUB_ENV
+          fi
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
         with:
@@ -36,11 +61,11 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/discord-bot:latest
-            docker stop discord-bot || true
-            docker rm discord-bot || true
+            docker pull ${{ env.IMAGE_NAME }}
+            docker stop ${{ env.CONTAINER_NAME }} || true
+            docker rm ${{ env.CONTAINER_NAME }} || true
             docker run -d \
-              --name discord-bot \
+              --name ${{ env.CONTAINER_NAME }} \
               --restart unless-stopped \
-              -e TOKEN=${{ secrets.DISCORD_TOKEN }} \
-              ${{ secrets.DOCKERHUB_USERNAME }}/discord-bot:latest 
+              -e TOKEN=${{ secrets[env.TOKEN_NAME] }} \
+              ${{ env.IMAGE_NAME }} 
