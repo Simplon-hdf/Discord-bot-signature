@@ -44,7 +44,7 @@ Le déploiement est automatique via GitHub Actions :
     docker logs discord-bot-dev
 
 ## 📁 Structure du projet
-
+```
 discord-bot-signature/
 │── src/
 │   ├── commands/             # Commandes Discord.js
@@ -63,3 +63,4 @@ discord-bot-signature/
 │── .env                      # Variables d’environnement
 │── package.json              # Dépendances et scripts
 │── README.md                 # Documentation
+```
