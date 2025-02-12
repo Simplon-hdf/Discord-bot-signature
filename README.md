@@ -45,9 +45,21 @@ Le déploiement est automatique via GitHub Actions :
 
 ## 📁 Structure du projet
 
-    .
-    ├── .github/workflows/   # Pipeline CI/CD
-    │   └── deploy.yml      # Configuration du déploiement
-    ├── Dockerfile          # Configuration Docker
-    ├── package.json        # Dépendances Node.js
-    └── .gitignore         # Fichiers ignorés par Git 
+discord-bot-signature/
+│── src/
+│   ├── commands/             # Commandes Discord.js
+│   ├── events/               # Gestion des événements Discord.js
+│   ├── services/             # Services pour la communication avec l'API
+│   ├── config/               # Configurations générales
+│   ├── utils/                # Outils divers
+│   ├── server/               # Serveur HTTP pour écouter les requêtes
+│   │   ├── httpServer.js     # Serveur Express.js minimal
+│   │   ├── routes.js         # Définition des routes HTTP
+│   │   ├── controllers/      # Logique métier des endpoints
+│   │   │   ├── botController.js   # Fonctions pour interagir avec le bot
+│   │   │   ├── statsController.js # Gestion des stats envoyées à l'API NestJS
+│   ├── index.js              # Point d’entrée principal
+│   ├── client.js             # Initialisation et connexion du bot
+│── .env                      # Variables d’environnement
+│── package.json              # Dépendances et scripts
+│── README.md                 # Documentation
