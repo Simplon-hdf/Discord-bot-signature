@@ -1,21 +1,28 @@
 require('dotenv').config();
-const { startBot } = require('./bot/bot');
-const { startServer } = require('./server/server');
+const { Client } = require('./client');
 const logger = require('./utils/logger');
 
-async function main() {
-    try {
-        // Démarrage du bot Discord
-        await startBot();
-        
-        // Démarrage du serveur Express
-        await startServer();
-        
-        logger.info('Application démarrée avec succès');
-    } catch (error) {
-        logger.error('Erreur lors du démarrage de l\'application:', error);
-        process.exit(1);
-    }
+// Vérifier que les variables d'environnement essentielles sont définies
+if (!process.env.TOKEN) {
+  logger.error('Le token Discord n\'est pas défini dans les variables d\'environnement');
+  process.exit(1);
 }
 
-main(); 
+// Créer et démarrer le client Discord
+const client = new Client();
+
+// Démarrer le bot
+client.start().catch(error => {
+  logger.error(`Erreur au démarrage du bot: ${error.message}`);
+  process.exit(1);
+});
+
+// Gérer les erreurs non capturées
+process.on('unhandledRejection', error => {
+  logger.error(`Promesse rejetée non gérée: ${error.message}`, error);
+});
+
+process.on('uncaughtException', error => {
+  logger.error(`Exception non capturée: ${error.message}`, error);
+  process.exit(1);
+}); 
