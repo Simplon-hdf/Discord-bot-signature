@@ -67,5 +67,6 @@ async function startBot() {
 
 module.exports = {
     startBot,
-    client
+    client,
+    createSignatureThread
 };
