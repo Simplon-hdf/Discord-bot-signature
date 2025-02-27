@@ -11,6 +11,10 @@ const selectedFormateurs = new Map(); // Clé: messageId, Valeur: ID du formateu
 // Au début du fichier, ajoutons un verrouillage global
 const threadCreationLocks = new Map(); // Pour stocker les verrous par promotion
 
+// SOLUTION D'URGENCE POUR ÉVITER LA CRÉATION MULTIPLE DE THREADS
+// Variable pour indiquer si un thread est en cours de création, peu importe la promotion
+let isCreatingAnyThread = false;
+
 module.exports = {
   name: Events.InteractionCreate,
   async execute(interaction, client) {
@@ -387,192 +391,165 @@ module.exports = {
         
         // Bouton pour créer un thread de signature
         if (interaction.customId === 'signature-create-button') {
-          // Vérifier si une création est déjà en cours
-          if (threadCreationLocks.has(selectedPromotionUuid)) {
-            await interaction.reply({
-              content: "Un thread est déjà en cours de création pour cette promotion. Veuillez patienter.",
-              ephemeral: true
-            });
-            return;
-          }
+          // Bloquer immédiatement les interactions multiples
+          await interaction.deferReply({ flags: 64 });
           
           try {
             // Vérifier si une promotion est sélectionnée
             if (!selectedPromotionUuid) {
-              await interaction.reply({
-                content: 'Veuillez d\'abord sélectionner une promotion dans le menu déroulant.',
-                ephemeral: true
+              await interaction.editReply({
+                content: 'Veuillez d\'abord sélectionner une promotion dans le menu.',
+                flags: 64
               });
               return;
             }
-            
-            // Verrouiller la création pour cette promotion
-            threadCreationLocks.set(selectedPromotionUuid, true);
-            
-            // Utiliser reply plutôt que deferUpdate pour éviter les déclenchements multiples
-            await interaction.reply({
-              content: "Création du thread de signature en cours...",
-              ephemeral: true
-            });
             
             // Récupérer les données de promotion
             const promotions = await signatureService.getPromotions();
             const selectedPromo = promotions.find(promo => promo.uuid === selectedPromotionUuid);
             
             if (!selectedPromo) {
-              threadCreationLocks.delete(selectedPromotionUuid);
               await interaction.editReply({
                 content: 'Impossible de trouver la promotion sélectionnée.',
-                ephemeral: true
+                flags: 64
               });
               return;
             }
             
-            // Vérifier que la promotion a un canal forum
+            await interaction.editReply({
+              content: `Création du thread pour ${selectedPromo.nom} en cours...`,
+              flags: 64
+            });
+            
+            // Vérifier le canal de la promotion
             if (!selectedPromo.channel || !selectedPromo.channel.snowflake) {
-              threadCreationLocks.delete(selectedPromotionUuid);
               await interaction.editReply({
                 content: `La promotion ${selectedPromo.nom} n'a pas de canal défini.`,
-                ephemeral: true
+                flags: 64
               });
               return;
             }
             
+            // Récupérer le canal de forum
             const channel = await client.channels.fetch(selectedPromo.channel.snowflake).catch(err => {
               logger.error(`Erreur lors de la récupération du canal: ${err.message}`);
               throw new Error(`Impossible de trouver le canal avec l'ID ${selectedPromo.channel.snowflake}.`);
             });
             
             if (!channel || channel.type !== ChannelType.GuildForum) {
-              threadCreationLocks.delete(selectedPromotionUuid);
               await interaction.editReply({
                 content: `Le canal pour la promotion ${selectedPromo.nom} n'est pas un forum.`,
-                ephemeral: true
+                flags: 64
               });
               return;
             }
             
-            // Vérification des threads existants
-            const existingThreads = channel.threads.cache.filter(thread => 
-              thread.name.includes(`Signature - ${selectedPromo.nom}`) && 
-              !thread.archived
+            // Vérifier si un thread existe déjà
+            const existingThreads = channel.threads.cache.filter(t => 
+              t.name.includes(`Signature - ${selectedPromo.nom}`) && !t.archived
             );
             
             if (existingThreads.size > 0) {
               const threadId = existingThreads.first().id;
-              threadCreationLocks.delete(selectedPromotionUuid);
               await interaction.editReply({
-                content: `Un thread de signature existe déjà pour la promotion ${selectedPromo.nom}. [Cliquez ici pour y accéder](https://discord.com/channels/${interaction.guildId}/${threadId})`,
-                ephemeral: true
+                content: `Un thread existe déjà pour ${selectedPromo.nom}. [Cliquez ici](https://discord.com/channels/${interaction.guildId}/${threadId})`,
+                flags: 64
               });
               return;
             }
             
-            // Filtrer les apprenants et formateurs valides
-            const validApprenants = selectedPromo.apprenants.filter(a => a.snowflake && a.nom);
-            const validFormateurs = selectedPromo.formateurs.filter(f => f.snowflake && f.nom);
-            
-            if (validApprenants.length === 0) {
-              threadCreationLocks.delete(selectedPromotionUuid);
-              await interaction.editReply({
-                content: `La promotion ${selectedPromo.nom} n'a pas d'apprenants valides.`,
-                ephemeral: true
-              });
-              return;
-            }
-            
-            if (validFormateurs.length === 0) {
-              threadCreationLocks.delete(selectedPromotionUuid);
-              await interaction.editReply({
-                content: `La promotion ${selectedPromo.nom} n'a pas de formateurs valides.`,
-                ephemeral: true
-              });
-              return;
-            }
-            
-            // Informer de la progression
-            await interaction.editReply({
-              content: "Création du thread...",
-              ephemeral: true
-            });
-            
-            // Créer le thread avec un message initial
+            // Créer le thread
             const thread = await channel.threads.create({
               name: `Signature - ${selectedPromo.nom}`,
               message: {
-                content: `Thread de signatures pour la promotion ${selectedPromo.nom}, créé par ${interaction.user.username}`
+                content: `Thread de signatures pour ${selectedPromo.nom}`
               }
             });
             
-            // Étape 1: Créer le message pour les formateurs
+            logger.info(`Thread créé: ${thread.id}`);
+            
+            // --- PREMIER MESSAGE: FORMATEURS -> APPRENANTS ---
             await interaction.editReply({
-              content: "Thread créé! Configuration des messages en cours...",
-              ephemeral: true
+              content: `Thread créé, ajout du message pour les formateurs...`,
+              flags: 64
             });
             
-            try {
-              // Message 1: Pour les formateurs (leur permettant d'envoyer aux apprenants)
-              const formateursEmbed = new EmbedBuilder()
-                .setTitle(`Message aux Apprenants: ${selectedPromo.nom}`)
-                .setDescription('Sélectionnez les apprenants auxquels envoyer un rappel.')
-                .setColor('#3498db');
-              
-              const apprenantsSelectMenu = new StringSelectMenuBuilder()
-                .setCustomId('select-apprenants')
-                .setPlaceholder('Sélectionnez des apprenants')
-                .setMinValues(1)
-                .setMaxValues(validApprenants.length)
-                .addOptions(
-                  validApprenants.map(apprenant => ({
-                    label: apprenant.nom,
-                    value: apprenant.snowflake,
-                    description: `Apprenant de ${selectedPromo.nom}`
-                  }))
-                );
-              
-              const sendToSelectedButton = new ButtonBuilder()
+            // Filtrer les apprenants valides
+            const validApprenants = selectedPromo.apprenants.filter(a => a.snowflake && a.nom);
+            
+            if (validApprenants.length === 0) {
+              throw new Error(`La promotion ${selectedPromo.nom} n'a pas d'apprenants valides.`);
+            }
+            
+            // Créer l'embed pour les formateurs
+            const formateursEmbed = new EmbedBuilder()
+              .setTitle(`Message aux Apprenants: ${selectedPromo.nom}`)
+              .setDescription('Sélectionnez les apprenants auxquels envoyer un rappel.')
+              .setColor('#3498db');
+            
+            // Créer le menu de sélection des apprenants
+            const apprenantsSelectMenu = new StringSelectMenuBuilder()
+              .setCustomId('select-apprenants')
+              .setPlaceholder('Sélectionnez des apprenants')
+              .setMinValues(1)
+              .setMaxValues(validApprenants.length)
+              .addOptions(
+                validApprenants.map(a => ({
+                  label: a.nom,
+                  value: a.snowflake,
+                  description: `Apprenant de ${selectedPromo.nom}`
+                }))
+              );
+            
+            // Créer les boutons d'action
+            const formateursButtonRow = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
                 .setCustomId('send-to-selected-apprenants')
                 .setLabel('Envoyer aux sélectionnés')
                 .setStyle(ButtonStyle.Primary)
-                .setEmoji('📩');
-              
-              const sendToAllButton = new ButtonBuilder()
+                .setEmoji('📩'),
+              new ButtonBuilder()
                 .setCustomId('send-to-all-apprenants')
                 .setLabel('Envoyer à tous')
                 .setStyle(ButtonStyle.Danger)
-                .setEmoji('📣');
-              
-              const refreshApprenantsButton = new ButtonBuilder()
+                .setEmoji('📣'),
+              new ButtonBuilder()
                 .setCustomId('refresh-apprenants-list')
                 .setLabel('Rafraîchir')
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji('🔄');
-              
-              const apprenantsSelectRow = new ActionRowBuilder().addComponents(apprenantsSelectMenu);
-              const formateursButtonRow = new ActionRowBuilder().addComponents(
-                sendToSelectedButton, 
-                sendToAllButton, 
-                refreshApprenantsButton
-              );
-              
-              // Envoyer le premier message (formateurs -> apprenants)
-              await thread.send({
-                embeds: [formateursEmbed],
-                components: [apprenantsSelectRow, formateursButtonRow]
-              });
-              
-              // Message 2: Pour les apprenants (leur permettant de contacter les formateurs)
-              const apprenantsEmbed = new EmbedBuilder()
-                .setTitle(`Message aux Formateurs: ${selectedPromo.nom}`)
-                .setDescription('Sélectionnez un formateur ou le chargé de projet auquel envoyer un rappel.')
-                .setColor('#2ecc71');
-              
-              // Préparer les options pour le menu des formateurs et CDP
-              const staffOptions = [];
-              
-              // Ajouter les formateurs
-              if (validFormateurs.length > 0) {
-                for (const formateur of validFormateurs) {
+                .setEmoji('🔄')
+            );
+            
+            // Envoyer le message pour les formateurs
+            const message1 = await thread.send({
+              embeds: [formateursEmbed],
+              components: [
+                new ActionRowBuilder().addComponents(apprenantsSelectMenu),
+                formateursButtonRow
+              ]
+            });
+            
+            logger.info(`Premier message créé: ${message1.id}`);
+            
+            // --- SECOND MESSAGE: APPRENANTS -> FORMATEURS ---
+            await interaction.editReply({
+              content: `Ajout du message pour les apprenants...`,
+              flags: 64
+            });
+            
+            // Créer l'embed pour les apprenants
+            const apprenantsEmbed = new EmbedBuilder()
+              .setTitle(`Message aux Formateurs: ${selectedPromo.nom}`)
+              .setDescription('Sélectionnez un formateur ou le chargé de projet auquel envoyer un rappel.')
+              .setColor('#2ecc71');
+            
+            // Préparer les options pour le menu des formateurs et CDP
+            const staffOptions = [];
+            
+            // Ajouter les formateurs
+            if (selectedPromo.formateurs && Array.isArray(selectedPromo.formateurs)) {
+              for (const formateur of selectedPromo.formateurs) {
+                if (formateur.snowflake && formateur.nom) {
                   staffOptions.push({
                     label: formateur.nom,
                     value: formateur.snowflake,
@@ -580,89 +557,60 @@ module.exports = {
                   });
                 }
               }
-              
-              // Ajouter le chargé de projet s'il existe
-              if (selectedPromo.chargeDeProjet && selectedPromo.chargeDeProjet.snowflake) {
-                staffOptions.push({
-                  label: selectedPromo.chargeDeProjet.nom,
-                  value: selectedPromo.chargeDeProjet.snowflake,
-                  description: `Chargé de projet pour ${selectedPromo.nom}`
-                });
-              }
-              
-              // Vérifier qu'on a au moins une option
-              if (staffOptions.length === 0) {
-                throw new Error("Aucun formateur ou chargé de projet disponible pour cette promotion");
-              }
-              
-              const formateursSelectMenu = new StringSelectMenuBuilder()
-                .setCustomId('select-formateurs')
-                .setPlaceholder('Sélectionnez un formateur ou CDP')
-                .addOptions(staffOptions);
-              
-              const sendToFormButton = new ButtonBuilder()
-                .setCustomId('send-to-formateur')
-                .setLabel('Envoyer au formateur')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('📩');
-              
-              const refreshFormateursButton = new ButtonBuilder()
-                .setCustomId('refresh-formateurs-list')
-                .setLabel('Rafraîchir')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('🔄');
-              
-              const formateursSelectRow = new ActionRowBuilder().addComponents(formateursSelectMenu);
-              const formateursActionRow = new ActionRowBuilder().addComponents(
-                sendToFormButton,
-                refreshFormateursButton
-              );
-              
-              // Envoyer le second message (apprenants -> formateurs/CDP)
-              await thread.send({
-                embeds: [apprenantsEmbed],
-                components: [formateursSelectRow, formateursActionRow]
-              });
-              
-              // Notification de succès
-              await interaction.editReply({
-                content: `✅ Le thread de signature pour ${selectedPromo.nom} a été créé avec succès! [Cliquez ici pour y accéder](https://discord.com/channels/${interaction.guildId}/${thread.id})`,
-                ephemeral: true
-              });
-              
-            } catch (error) {
-              logger.error(`Erreur lors de la configuration du thread: ${error.message}`);
-              await interaction.editReply({
-                content: `Le thread a été créé mais une erreur est survenue lors de la configuration: ${error.message}. [Cliquez ici pour y accéder](https://discord.com/channels/${interaction.guildId}/${thread.id})`,
-                ephemeral: true
-              });
-            } finally {
-              // S'assurer de libérer le verrou dans tous les cas
-              threadCreationLocks.delete(selectedPromotionUuid);
             }
+            
+            // Ajouter le chargé de projet s'il existe
+            if (selectedPromo.chargeDeProjet && selectedPromo.chargeDeProjet.snowflake) {
+              staffOptions.push({
+                label: selectedPromo.chargeDeProjet.nom,
+                value: selectedPromo.chargeDeProjet.snowflake,
+                description: `Chargé de projet pour ${selectedPromo.nom}`
+              });
+            }
+            
+            // Vérifier qu'il y a au moins une option
+            if (staffOptions.length === 0) {
+              throw new Error(`Aucun formateur ou chargé de projet valide pour la promotion ${selectedPromo.nom}`);
+            }
+            
+            // Créer le message pour les apprenants
+            const message2 = await thread.send({
+              embeds: [apprenantsEmbed],
+              components: [
+                new ActionRowBuilder().addComponents(
+                  new StringSelectMenuBuilder()
+                    .setCustomId('select-formateurs')
+                    .setPlaceholder('Sélectionnez un formateur ou CDP')
+                    .addOptions(staffOptions)
+                ),
+                new ActionRowBuilder().addComponents(
+                  new ButtonBuilder()
+                    .setCustomId('send-to-formateur')
+                    .setLabel('Envoyer au formateur')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('📩'),
+                  new ButtonBuilder()
+                    .setCustomId('refresh-formateurs-list')
+                    .setLabel('Rafraîchir')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('🔄')
+                )
+              ]
+            });
+            
+            logger.info(`Second message créé: ${message2.id}`);
+            
+            // Notification finale
+            await interaction.editReply({
+              content: `✅ Thread de signature créé avec succès pour ${selectedPromo.nom}! [Cliquez ici](https://discord.com/channels/${interaction.guildId}/${thread.id})`,
+              flags: 64
+            });
           } catch (error) {
-            // Libérer le verrou en cas d'erreur
-            if (selectedPromotionUuid) {
-              threadCreationLocks.delete(selectedPromotionUuid);
-            }
-            
             logger.error(`Erreur lors de la création du thread: ${error.message}`);
-            
-            try {
-              await interaction.editReply({
-                content: `Une erreur est survenue: ${error.message}`,
-                ephemeral: true
-              });
-            } catch (replyError) {
-              try {
-                await interaction.followUp({
-                  content: `Une erreur est survenue: ${error.message}`,
-                  ephemeral: true
-                });
-              } catch (followUpError) {
-                logger.error(`Impossible de notifier l'utilisateur après erreur: ${followUpError.message}`);
-              }
-            }
+            await interaction.editReply({
+              content: `Une erreur est survenue: ${error.message}`,
+              flags: 64
+            });
           }
         }
         
