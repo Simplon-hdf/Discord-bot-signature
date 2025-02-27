@@ -511,44 +511,45 @@ module.exports = {
             const formateursSelectMenu = new StringSelectMenuBuilder()
               .setCustomId('select-formateurs')
               .setPlaceholder('Sélectionnez un formateur')
-              .addOptions([
+              .addOptions(
                 // Ajouter les formateurs
-                ...selectedPromo.formateurs.map(formateur => ({
+                selectedPromo.formateurs.map(formateur => ({
                   label: formateur.nom,
                   value: formateur.snowflake,
-                  description: `Formateur de ${selectedPromo.nom}`
+                  description: `Formateur pour ${selectedPromo.nom}`
                 })),
-                // Ajouter les chargés de projet
-                ...selectedPromo.chargesProjet.map(cp => ({
-                  label: cp.nom,
-                  value: cp.snowflake,
+                // Ajouter le chargé de projet s'il existe
+                selectedPromo.chargeDeProjet ? [{
+                  label: selectedPromo.chargeDeProjet.nom,
+                  value: selectedPromo.chargeDeProjet.snowflake,
                   description: `Chargé de projet pour ${selectedPromo.nom}`
-                }))
-              ]);
+                }] : []
+              );
             
-            // Créer les boutons pour les apprenants
-            const sendToFormateurButton = new ButtonBuilder()
+            // Bouton pour envoyer le message au formateur sélectionné
+            const sendToFormButton = new ButtonBuilder()
               .setCustomId('send-to-formateur')
               .setLabel('Envoyer au formateur')
               .setStyle(ButtonStyle.Primary)
               .setEmoji('📩');
             
+            // Bouton pour rafraîchir la liste des formateurs
             const refreshFormateursButton = new ButtonBuilder()
               .setCustomId('refresh-formateurs-list')
               .setLabel('Rafraîchir')
               .setStyle(ButtonStyle.Secondary)
               .setEmoji('🔄');
             
-            // Assembler les composants pour les apprenants
+            // Assembler les composants
             const formateursSelectRow = new ActionRowBuilder().addComponents(formateursSelectMenu);
-            const apprenantsButtonRow = new ActionRowBuilder().addComponents(
-              sendToFormateurButton,
+            const formateursActionRow = new ActionRowBuilder().addComponents(
+              sendToFormButton,
               refreshFormateursButton
             );
             
             await thread.send({
               embeds: [apprenantsEmbed],
-              components: [formateursSelectRow, apprenantsButtonRow]
+              components: [formateursSelectRow, formateursActionRow]
             });
             
             await interaction.followUp({
@@ -770,59 +771,101 @@ module.exports = {
         
         // Bouton pour envoyer un message au formateur sélectionné
         else if (interaction.customId === 'send-to-formateur') {
-          // On utilise le followUp au lieu de deferReply/editReply pour éviter les conflits
-          const selectedFormateur = selectedFormateurs.get(interaction.message.id);
-          
-          if (!selectedFormateur) {
-            await interaction.followUp({
-              content: 'Veuillez d\'abord sélectionner un formateur.',
-              flags: 64
-            }).catch(err => logger.error('Erreur lors du followUp pour formateur non sélectionné:', err));
-            return;
-          }
-          
           try {
-            // Tenter de récupérer l'utilisateur
-            const user = await client.users.fetch(selectedFormateur).catch(error => {
-              logger.error(`Erreur lors de la récupération de l'utilisateur ${selectedFormateur}: ${error.message}`);
-              throw new Error(`Impossible de trouver l'utilisateur avec l'ID ${selectedFormateur}.`);
-            });
+            // Différer la mise à jour immédiatement
+            await interaction.deferUpdate();
             
-            logger.info(`Tentative d'envoi d'un message à ${user.tag} (${selectedFormateur})`);
+            // Récupérer le formateur sélectionné
+            const selectedFormateur = selectedFormateurs.get(interaction.message.id);
             
-            // Essayer d'envoyer le message
-            await user.send({
-              content: `**Rappel de signature** 📝\n\n${interaction.user.username} vous rappelle d'autoriser la signature.`
-            }).catch(error => {
-              logger.error(`Erreur lors de l'envoi du message à ${user.tag}: ${error.message}`);
-              if (error.message.includes('Cannot send messages to this user')) {
-                throw new Error(`${user.tag} a désactivé les messages privés venant des membres du serveur.`);
-              } else {
-                throw error;
+            if (!selectedFormateur) {
+              await interaction.followUp({
+                content: 'Veuillez d\'abord sélectionner un formateur.',
+                ephemeral: true
+              });
+              return;
+            }
+            
+            // Récupérer la promotion à partir du titre du message
+            const embedTitle = interaction.message.embeds[0].title;
+            const promoNom = embedTitle.split(':')[1].trim();
+            
+            try {
+              // Récupérer l'utilisateur
+              const userId = selectedFormateur.toString();
+              const user = await client.users.fetch(userId).catch(err => {
+                logger.error(`Impossible de récupérer l'utilisateur ${userId}: ${err.message}`);
+                throw new Error(`Utilisateur non trouvé avec l'ID ${userId}`);
+              });
+              
+              logger.info(`Tentative d'envoi d'un message à ${user.tag} (${userId})`);
+              
+              // Trouver le lien vers le canal de signature de la promotion
+              const promotions = await signatureService.getPromotions();
+              const promo = promotions.find(p => p.nom === promoNom);
+              
+              let signatureLink = '';
+              if (promo && promo.channel && promo.channel.snowflake) {
+                signatureLink = `\n\nVous pouvez accéder au forum de signature ici: https://discord.com/channels/${interaction.guildId}/${promo.channel.snowflake}`;
               }
-            });
-            
-            // Si on arrive ici, c'est que l'envoi a réussi
-            logger.info(`Message envoyé avec succès à ${user.tag}`);
-            
-            // Notifier l'utilisateur du succès
-            await interaction.followUp({
-              content: `✅ Message envoyé avec succès au formateur ${user.tag}`,
-              flags: 64
-            }).catch(err => logger.error('Erreur lors du followUp pour succès:', err));
-            
-            // Enregistrer l'action dans le thread
-            await interaction.channel.send({
-              content: `📤 ${interaction.user.username} a envoyé un rappel au formateur ${user.tag}.`
-            }).catch(err => logger.error('Erreur lors de l\'envoi du message dans le canal:', err));
+              
+              // Essayer d'envoyer le message privé
+              try {
+                await user.send({
+                  content: `**Rappel de signature** 📝\n\n${interaction.user.username} vous rappelle d'autoriser la signature pour la promotion ${promoNom}.${signatureLink}`
+                });
+                
+                logger.info(`Message envoyé avec succès à ${user.tag}`);
+                
+                // Notifier l'utilisateur du succès
+                await interaction.followUp({
+                  content: `✅ Message envoyé avec succès au formateur ${user.tag}`,
+                  ephemeral: true
+                });
+                
+                // Enregistrer l'action dans le thread
+                await interaction.channel.send({
+                  content: `📤 ${interaction.user.username} a envoyé un rappel au formateur <@${userId}>.`
+                });
+              } catch (dmError) {
+                logger.error(`Erreur lors de l'envoi du message à ${user.tag}: ${dmError.message}`);
+                
+                // Déterminer la raison de l'échec
+                let errorReason = dmError.message;
+                if (dmError.message.includes('Cannot send messages to this user')) {
+                  errorReason = "A désactivé les messages privés venant du serveur";
+                }
+                
+                // Notifier l'utilisateur de l'échec
+                await interaction.followUp({
+                  content: `❌ Impossible d'envoyer un message au formateur ${user.tag}: ${errorReason}`,
+                  ephemeral: true
+                });
+                
+                // Enregistrer l'échec dans le thread
+                await interaction.channel.send({
+                  content: `⚠️ **Échec** : Impossible d'envoyer un message à <@${userId}>\n> Raison : ${errorReason}`
+                });
+              }
+            } catch (error) {
+              logger.error(`Erreur avec l'utilisateur formateur ${selectedFormateur}: ${error.message}`);
+              
+              await interaction.followUp({
+                content: `❌ Erreur: ${error.message}`,
+                ephemeral: true
+              });
+              
+              // Notification d'échec dans le thread
+              await interaction.channel.send({
+                content: `⚠️ **Échec** : Impossible de trouver le formateur avec l'ID **${selectedFormateur}**\n> Raison : ${error.message}`
+              });
+            }
           } catch (error) {
-            // Gérer les erreurs
-            logger.error(`Impossible d'envoyer un message au formateur: ${error.message}`);
-            
+            logger.error(`Erreur lors de l'envoi du message au formateur: ${error}`);
             await interaction.followUp({
-              content: `❌ Erreur: ${error.message}`,
-              flags: 64
-            }).catch(err => logger.error('Erreur lors du followUp pour erreur:', err));
+              content: `Une erreur est survenue lors de l'envoi du message: ${error.message}`,
+              ephemeral: true
+            }).catch(err => logger.error('Erreur de followup après erreur:', err));
           }
         }
       }
