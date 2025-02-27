@@ -382,67 +382,130 @@ module.exports = {
           return;
         }
         
-        // Bouton de création de thread de signature
+        // Bouton pour créer un thread de signature
         if (interaction.customId === 'signature-create-button') {
-          if (!selectedPromotionUuid) {
+          // Ajouter une propriété pour éviter les créations multiples
+          if (interaction.message.threadCreationInProgress) {
+            logger.warn("Création de thread déjà en cours pour ce message");
             await interaction.followUp({
-              content: 'Veuillez d\'abord sélectionner une promotion dans le menu déroulant.',
-              flags: 64 // ephemeral
-            }).catch(err => logger.error('Erreur lors du followUp pour signature-create-button sans promo:', err));
+              content: "Une création de thread est déjà en cours, veuillez patienter.",
+              ephemeral: true
+            });
             return;
           }
           
+          // Marquer que la création est en cours
+          interaction.message.threadCreationInProgress = true;
+          
           try {
+            // Différer la mise à jour immédiatement
+            await interaction.deferUpdate();
+            
+            // Vérifier si une promotion est sélectionnée
+            if (!selectedPromotionUuid) {
+              await interaction.followUp({
+                content: 'Veuillez d\'abord sélectionner une promotion dans le menu déroulant.',
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
+              return;
+            }
+            
+            // Récupérer les données de promotion
             const promotions = await signatureService.getPromotions();
             const selectedPromo = promotions.find(promo => promo.uuid === selectedPromotionUuid);
             
             if (!selectedPromo) {
               await interaction.followUp({
                 content: 'Impossible de trouver la promotion sélectionnée.',
-                flags: 64 // ephemeral
-              }).catch(err => logger.error('Erreur lors du followUp pour promotion non trouvée:', err));
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
               return;
             }
             
-            // Récupérer le canal de forum de la promotion
-            let channel;
-            try {
-              channel = await client.channels.fetch(selectedPromo.channel.snowflake);
-            } catch (error) {
-              logger.error(`Impossible de trouver le canal avec l'ID ${selectedPromo.channel.snowflake}: ${error.message}`);
+            // Vérifier le canal de la promotion
+            if (!selectedPromo.channel || !selectedPromo.channel.snowflake) {
               await interaction.followUp({
-                content: `Impossible de trouver le canal de la promotion. Vérifiez que l'ID ${selectedPromo.channel.snowflake} est correct.`,
-                flags: 64 // ephemeral
-              }).catch(err => logger.error('Erreur lors du followUp pour canal non trouvé:', err));
+                content: `La promotion ${selectedPromo.nom} n'a pas de canal défini.`,
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
               return;
             }
             
-            // Vérifier si c'est un forum
+            // Vérifier les apprenants et formateurs
+            if (!selectedPromo.apprenants || !Array.isArray(selectedPromo.apprenants) || selectedPromo.apprenants.length === 0) {
+              await interaction.followUp({
+                content: `La promotion ${selectedPromo.nom} n'a pas d'apprenants définis.`,
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
+              return;
+            }
+            
+            if (!selectedPromo.formateurs || !Array.isArray(selectedPromo.formateurs) || selectedPromo.formateurs.length === 0) {
+              await interaction.followUp({
+                content: `La promotion ${selectedPromo.nom} n'a pas de formateurs définis.`,
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
+              return;
+            }
+            
+            // Récupérer le canal de la promotion
+            const channel = await client.channels.fetch(selectedPromo.channel.snowflake).catch(err => {
+              logger.error(`Erreur lors de la récupération du canal ${selectedPromo.channel.snowflake}: ${err.message}`);
+              throw new Error(`Impossible de trouver le canal avec l'ID ${selectedPromo.channel.snowflake}.`);
+            });
+            
+            // Vérifier que le canal existe et qu'il s'agit bien d'un forum
+            if (!channel) {
+              await interaction.followUp({
+                content: `Impossible de trouver le canal pour la promotion ${selectedPromo.nom}.`,
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
+              return;
+            }
+            
             if (channel.type !== ChannelType.GuildForum) {
               await interaction.followUp({
-                content: `Le canal ${channel.name} n'est pas un canal de forum.`,
-                flags: 64 // ephemeral
-              }).catch(err => logger.error('Erreur lors du followUp pour canal non forum:', err));
+                content: `Le canal pour la promotion ${selectedPromo.nom} n'est pas un forum.`,
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
               return;
             }
             
-            // Message initial pour le thread
-            const threadStarterMessage = {
-              content: `**Préparation de la signature pour ${selectedPromo.nom}**`,
-              embeds: [
-                new EmbedBuilder()
-                  .setTitle(`🖋️ Thread de Signature - ${selectedPromo.nom}`)
-                  .setDescription(`Ce thread a été créé par ${interaction.user.username} pour gérer les signatures de la promotion ${selectedPromo.nom}.`)
-                  .setColor('#00a8ff')
-                  .setTimestamp()
-              ]
-            };
+            // Vérifier si un thread existe déjà pour cette promotion
+            const existingThreads = channel.threads.cache.filter(thread => 
+              thread.name.includes(`Signature - ${selectedPromo.nom}`) && 
+              !thread.archived
+            );
             
-            // Créer le thread
+            if (existingThreads.size > 0) {
+              const thread = existingThreads.first();
+              await interaction.followUp({
+                content: `Un thread de signature existe déjà pour la promotion ${selectedPromo.nom}. [Cliquez ici pour y accéder](https://discord.com/channels/${interaction.guildId}/${thread.id})`,
+                ephemeral: true
+              });
+              interaction.message.threadCreationInProgress = false;
+              return;
+            }
+            
+            // Filtrer les apprenants valides (avec snowflake)
+            const validApprenants = selectedPromo.apprenants.filter(apprenant => apprenant.snowflake && apprenant.nom);
+            
+            // Création du thread dans le forum
             const thread = await channel.threads.create({
               name: `Signature - ${selectedPromo.nom}`,
-              message: threadStarterMessage, // Message initial obligatoire
-              reason: `Création d'un thread de signature pour la promotion ${selectedPromo.nom} par ${interaction.user.tag}`
+              message: {
+                content: `Thread de signatures pour la promotion ${selectedPromo.nom}, créé par ${interaction.user.username}`
+              }
+            }).catch(err => {
+              logger.error(`Erreur lors de la création du thread: ${err.message}`);
+              throw new Error(`Impossible de créer le thread dans le forum: ${err.message}`);
             });
             
             logger.info(`Thread de signature créé: ${thread.name} (${thread.id})`);
@@ -568,26 +631,30 @@ module.exports = {
                 components: [formateursSelectRow, formateursActionRow]
               });
               
-              // Notification de succès
+              // Notification de succès final
               await interaction.followUp({
-                content: `✅ Le thread de signature pour ${selectedPromo.nom} a été créé avec succès!`,
+                content: `✅ Le thread de signature pour ${selectedPromo.nom} a été créé avec succès! [Cliquez ici pour y accéder](https://discord.com/channels/${interaction.guildId}/${thread.id})`,
                 ephemeral: true
               });
+              
+              // Libérer le verrou
+              interaction.message.threadCreationInProgress = false;
             } catch (error) {
               logger.error(`Erreur lors de la création des messages du thread de signature: ${error.message}`);
               await interaction.followUp({
-                content: `Le thread a été créé mais une erreur est survenue lors de la configuration: ${error.message}`,
+                content: `Le thread a été créé mais une erreur s'est produite lors de la configuration: ${error.message}. [Cliquez ici pour y accéder](https://discord.com/channels/${interaction.guildId}/${thread.id})`,
                 ephemeral: true
               });
+              interaction.message.threadCreationInProgress = false;
             }
           } catch (error) {
-            logger.error(`Erreur lors de la création du thread de signature: ${error.message}`, error);
+            logger.error(`Erreur lors de la création du thread de signature: ${error.message}`);
             await interaction.followUp({
               content: `Une erreur est survenue lors de la création du thread de signature: ${error.message}`,
               ephemeral: true
-            }).catch(err => logger.error('Erreur lors du followUp pour erreur de création de thread:', err));
+            });
+            interaction.message.threadCreationInProgress = false;
           }
-          return;
         }
         
         // Bouton pour envoyer un message aux apprenants sélectionnés
