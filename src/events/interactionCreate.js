@@ -447,117 +447,139 @@ module.exports = {
             
             logger.info(`Thread de signature créé: ${thread.name} (${thread.id})`);
             
-            // Créer le message pour les formateurs
-            const formateursEmbed = new EmbedBuilder()
-              .setTitle(`👨‍🏫 Formateurs → Apprenants: ${selectedPromo.nom}`)
-              .setDescription('Utilisez ce message pour envoyer un rappel aux apprenants concernant leurs signatures.')
-              .setColor('#27ae60')
-              .setFooter({ text: 'Sélectionnez des apprenants puis cliquez sur le bouton pour envoyer un rappel' });
-            
-            // Créer le menu de sélection des apprenants
-            const apprenantsSelectMenu = new StringSelectMenuBuilder()
-              .setCustomId('select-apprenants')
-              .setPlaceholder('Sélectionnez des apprenants')
-              .setMinValues(1)
-              .setMaxValues(selectedPromo.apprenants.length)
-              .addOptions(
-                selectedPromo.apprenants.map(apprenant => ({
-                  label: apprenant.nom,
-                  value: apprenant.snowflake,
-                  description: `Apprenant de ${selectedPromo.nom}`
-                }))
+            try {
+              // 1. Message pour les formateurs uniquement
+              const formateursEmbed = new EmbedBuilder()
+                .setTitle(`Message aux Apprenants: ${selectedPromo.nom}`)
+                .setDescription('Sélectionnez les apprenants auxquels envoyer un rappel.')
+                .setColor('#3498db');
+              
+              // Options du select menu pour les apprenants
+              const apprenantsSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('select-apprenants')
+                .setPlaceholder('Sélectionnez des apprenants')
+                .setMinValues(1)
+                .setMaxValues(selectedPromo.apprenants.length)
+                .addOptions(
+                  selectedPromo.apprenants.map(apprenant => ({
+                    label: apprenant.nom,
+                    value: apprenant.snowflake,
+                    description: `Apprenant de ${selectedPromo.nom}`
+                  }))
+                );
+              
+              // Boutons pour les formateurs
+              const sendToSelectedButton = new ButtonBuilder()
+                .setCustomId('send-to-selected-apprenants')
+                .setLabel('Envoyer aux sélectionnés')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('📩');
+              
+              const sendToAllButton = new ButtonBuilder()
+                .setCustomId('send-to-all-apprenants')
+                .setLabel('Envoyer à tous')
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji('📣');
+              
+              const refreshApprenantsButton = new ButtonBuilder()
+                .setCustomId('refresh-apprenants-list')
+                .setLabel('Rafraîchir')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('🔄');
+              
+              // Assembler les composants
+              const apprenantsSelectRow = new ActionRowBuilder().addComponents(apprenantsSelectMenu);
+              const formateursButtonRow = new ActionRowBuilder().addComponents(
+                sendToSelectedButton, 
+                sendToAllButton, 
+                refreshApprenantsButton
               );
-            
-            // Créer les boutons pour les formateurs
-            const sendToSelectedButton = new ButtonBuilder()
-              .setCustomId('send-to-selected-apprenants')
-              .setLabel('Envoyer aux sélectionnés')
-              .setStyle(ButtonStyle.Primary)
-              .setEmoji('📩');
-            
-            const sendToAllButton = new ButtonBuilder()
-              .setCustomId('send-to-all-apprenants')
-              .setLabel('Envoyer à tous')
-              .setStyle(ButtonStyle.Success)
-              .setEmoji('📬');
-            
-            const refreshApprenantsButton = new ButtonBuilder()
-              .setCustomId('refresh-apprenants-list')
-              .setLabel('Rafraîchir')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('🔄');
-            
-            // Assembler les composants pour les formateurs
-            const apprenantsSelectRow = new ActionRowBuilder().addComponents(apprenantsSelectMenu);
-            const formateursButtonRow = new ActionRowBuilder().addComponents(
-              sendToSelectedButton, 
-              sendToAllButton, 
-              refreshApprenantsButton
-            );
-            
-            await thread.send({
-              embeds: [formateursEmbed],
-              components: [apprenantsSelectRow, formateursButtonRow]
-            });
-            
-            // Créer et envoyer le message pour les apprenants
-            const apprenantsEmbed = new EmbedBuilder()
-              .setTitle(`👨‍🎓 Apprenants → Formateurs: ${selectedPromo.nom}`)
-              .setDescription('Utilisez ce message pour envoyer un rappel à un formateur concernant votre signature.')
-              .setColor('#e74c3c')
-              .setFooter({ text: 'Sélectionnez un formateur puis cliquez sur le bouton pour envoyer un rappel' });
-            
-            // Créer le menu de sélection des formateurs
-            const formateursSelectMenu = new StringSelectMenuBuilder()
-              .setCustomId('select-formateurs')
-              .setPlaceholder('Sélectionnez un formateur')
-              .addOptions(
-                // Ajouter les formateurs
-                selectedPromo.formateurs.map(formateur => ({
-                  label: formateur.nom,
-                  value: formateur.snowflake,
-                  description: `Formateur pour ${selectedPromo.nom}`
-                })),
-                // Ajouter le chargé de projet s'il existe
-                selectedPromo.chargeDeProjet ? [{
+              
+              // Envoyer le message pour les formateurs
+              await thread.send({
+                embeds: [formateursEmbed],
+                components: [apprenantsSelectRow, formateursButtonRow]
+              });
+              
+              // 2. Message pour les apprenants uniquement
+              const apprenantsEmbed = new EmbedBuilder()
+                .setTitle(`Message aux Formateurs: ${selectedPromo.nom}`)
+                .setDescription('Sélectionnez un formateur ou le chargé de projet auquel envoyer un rappel.')
+                .setColor('#2ecc71');
+              
+              // CORRECTION: Inclure à la fois les formateurs ET le chargé de projet
+              const staffOptions = [];
+              
+              // Ajouter les formateurs
+              if (selectedPromo.formateurs && Array.isArray(selectedPromo.formateurs)) {
+                for (const formateur of selectedPromo.formateurs) {
+                  staffOptions.push({
+                    label: formateur.nom,
+                    value: formateur.snowflake,
+                    description: `Formateur pour ${selectedPromo.nom}`
+                  });
+                }
+              }
+              
+              // Ajouter le chargé de projet s'il existe
+              if (selectedPromo.chargeDeProjet && selectedPromo.chargeDeProjet.snowflake) {
+                staffOptions.push({
                   label: selectedPromo.chargeDeProjet.nom,
                   value: selectedPromo.chargeDeProjet.snowflake,
                   description: `Chargé de projet pour ${selectedPromo.nom}`
-                }] : []
+                });
+              }
+              
+              // Vérifier qu'il y a au moins une option
+              if (staffOptions.length === 0) {
+                throw new Error("Aucun formateur ou chargé de projet n'a été trouvé pour cette promotion");
+              }
+              
+              // Création du select menu pour les formateurs et CDP
+              const formateursSelectMenu = new StringSelectMenuBuilder()
+                .setCustomId('select-formateurs')
+                .setPlaceholder('Sélectionnez un formateur ou chargé de projet')
+                .addOptions(staffOptions);
+              
+              // Bouton pour envoyer le message au formateur sélectionné
+              const sendToFormButton = new ButtonBuilder()
+                .setCustomId('send-to-formateur')
+                .setLabel('Envoyer au formateur')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('📩');
+              
+              // Bouton pour rafraîchir la liste des formateurs
+              const refreshFormateursButton = new ButtonBuilder()
+                .setCustomId('refresh-formateurs-list')
+                .setLabel('Rafraîchir')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('🔄');
+              
+              // Assembler les composants
+              const formateursSelectRow = new ActionRowBuilder().addComponents(formateursSelectMenu);
+              const formateursActionRow = new ActionRowBuilder().addComponents(
+                sendToFormButton,
+                refreshFormateursButton
               );
-            
-            // Bouton pour envoyer le message au formateur sélectionné
-            const sendToFormButton = new ButtonBuilder()
-              .setCustomId('send-to-formateur')
-              .setLabel('Envoyer au formateur')
-              .setStyle(ButtonStyle.Primary)
-              .setEmoji('📩');
-            
-            // Bouton pour rafraîchir la liste des formateurs
-            const refreshFormateursButton = new ButtonBuilder()
-              .setCustomId('refresh-formateurs-list')
-              .setLabel('Rafraîchir')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('🔄');
-            
-            // Assembler les composants
-            const formateursSelectRow = new ActionRowBuilder().addComponents(formateursSelectMenu);
-            const formateursActionRow = new ActionRowBuilder().addComponents(
-              sendToFormButton,
-              refreshFormateursButton
-            );
-            
-            await thread.send({
-              embeds: [apprenantsEmbed],
-              components: [formateursSelectRow, formateursActionRow]
-            });
-            
-            await interaction.followUp({
-              content: `✅ Le thread de signature pour ${selectedPromo.nom} a été créé avec succès! [Cliquez ici pour y accéder](https://discord.com/channels/${interaction.guildId}/${thread.id})`,
-              ephemeral: true
-            }).catch(err => logger.error('Erreur lors du followUp pour création de thread réussie:', err));
-            
-            logger.info(`Thread de signature créé par ${interaction.user.tag} pour la promotion ${selectedPromo.nom}`);
+              
+              // Envoyer le message pour les apprenants
+              await thread.send({
+                embeds: [apprenantsEmbed],
+                components: [formateursSelectRow, formateursActionRow]
+              });
+              
+              // Notification de succès
+              await interaction.followUp({
+                content: `✅ Le thread de signature pour ${selectedPromo.nom} a été créé avec succès!`,
+                ephemeral: true
+              });
+            } catch (error) {
+              logger.error(`Erreur lors de la création des messages du thread de signature: ${error.message}`);
+              await interaction.followUp({
+                content: `Le thread a été créé mais une erreur est survenue lors de la configuration: ${error.message}`,
+                ephemeral: true
+              });
+            }
           } catch (error) {
             logger.error(`Erreur lors de la création du thread de signature: ${error.message}`, error);
             await interaction.followUp({
