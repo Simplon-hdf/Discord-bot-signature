@@ -133,36 +133,44 @@ module.exports = {
         
         // Menu pour la sélection des apprenants (pour les formateurs)
         if (interaction.customId === 'select-apprenants') {
-          const selectedApprenantsArray = interaction.values;
-          
-          // Stocker les apprenants sélectionnés pour ce message
-          selectedApprenants.set(interaction.message.id, selectedApprenantsArray);
-          
           try {
+            // Différer la mise à jour immédiatement
+            await interaction.deferUpdate();
+            
+            const selectedApprenantsArray = interaction.values;
+            
+            // Stocker les apprenants sélectionnés pour ce message
+            selectedApprenants.set(interaction.message.id, selectedApprenantsArray);
+            
+            // Utiliser followUp après deferUpdate
             await interaction.followUp({
               content: `Vous avez sélectionné ${selectedApprenantsArray.length} apprenant(s)`,
               ephemeral: true
             });
           } catch (error) {
-            logger.error(`Erreur lors du followUp pour select-apprenants: ${error.message}`);
+            logger.error(`Erreur lors de la gestion de select-apprenants: ${error.message}`);
           }
           return;
         }
         
         // Menu pour la sélection des formateurs (pour les apprenants)
         if (interaction.customId === 'select-formateurs') {
-          const selectedFormateur = interaction.values[0];
-          
-          // Stocker le formateur sélectionné pour ce message
-          selectedFormateurs.set(interaction.message.id, selectedFormateur);
-          
           try {
+            // Différer la mise à jour immédiatement
+            await interaction.deferUpdate();
+            
+            const selectedFormateur = interaction.values[0];
+            
+            // Stocker le formateur sélectionné pour ce message
+            selectedFormateurs.set(interaction.message.id, selectedFormateur);
+            
+            // Utiliser followUp après deferUpdate
             await interaction.followUp({
               content: `Vous avez sélectionné le formateur avec l'ID: ${selectedFormateur}`,
               ephemeral: true
             });
           } catch (error) {
-            logger.error(`Erreur lors du followUp pour select-formateurs: ${error.message}`);
+            logger.error(`Erreur lors de la gestion de select-formateurs: ${error.message}`);
           }
           return;
         }
