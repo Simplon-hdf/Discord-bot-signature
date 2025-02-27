@@ -1,106 +1,95 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const signatureService = require('../../services/signatureService');
 const logger = require('../../utils/logger');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('init-signature')
-    .setDescription('Initialise le message de création de threads de signature')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    
-  async execute(interaction, client) {
+    .setDescription('Initialise le système de signature pour une promotion'),
+
+  async execute(interaction) {
     try {
-      await interaction.deferReply({ ephemeral: true });
+      // Répondre immédiatement pour éviter le timeout
+      await interaction.deferReply();
       
-      // Récupérer le canal d'administration depuis les variables d'environnement
+      // Vérifier le canal d'administration
       const adminChannelId = process.env.ADMIN_CONFIG_CHANNEL_ID;
+      const isAdminChannel = interaction.channelId === adminChannelId;
       
-      if (!adminChannelId) {
+      if (!isAdminChannel) {
         return interaction.editReply({
-          content: 'La variable d\'environnement ADMIN_CONFIG_CHANNEL_ID n\'est pas définie.',
+          content: `Cette commande ne peut être utilisée que dans le canal d'administration <#${adminChannelId}>`,
           ephemeral: true
         });
       }
-      
-      const adminChannel = await client.channels.fetch(adminChannelId).catch(() => null);
-      
-      if (!adminChannel) {
-        return interaction.editReply({
-          content: `Impossible de trouver le canal d'administration avec l'ID ${adminChannelId}.`,
-          ephemeral: true
-        });
-      }
-      
-      // Récupérer la liste des promotions
+
+      // Récupération des promotions
       const promotions = await signatureService.getPromotions();
       
       if (!promotions || promotions.length === 0) {
         return interaction.editReply({
-          content: 'Aucune promotion n\'est disponible actuellement.',
+          content: 'Aucune promotion disponible pour le moment.',
           ephemeral: true
         });
       }
-      
-      // Créer l'embed pour le message
-      const embed = new EmbedBuilder()
-        .setTitle('🔔 Création de thread de signature')
-        .setDescription('Utilisez ce message pour créer un thread de signature pour une promotion.')
-        .setColor('#3498db')
-        .addFields(
-          { name: 'Instructions', value: '1. Sélectionnez une promotion dans le menu déroulant.\n2. Cliquez sur "Créer" pour générer le thread de signature.\n3. Si la liste des promotions a changé, utilisez "Rafraîchir".' }
-        )
-        .setFooter({ text: 'Bot de signature - v1.0' })
-        .setTimestamp();
-        
+
+      // Créer l'embed du message de configuration
+      const signatureEmbed = new EmbedBuilder()
+        .setTitle('🖋️ Configuration des Signatures')
+        .setDescription('Utilisez ce message pour configurer et suivre les signatures pour les promotions.')
+        .setColor('#00a8ff')
+        .setFooter({ text: 'Bot de Signature v1.0' });
+
       // Créer le menu de sélection des promotions
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('signature-select-promotion')
-        .setPlaceholder('Choisir une promotion')
+        .setPlaceholder('Sélectionnez une promotion')
         .addOptions(
           promotions.map(promo => ({
             label: promo.nom,
-            description: `${promo.apprenants.length} apprenants, ${promo.formateurs.length} formateurs`,
-            value: promo.uuid
+            value: promo.uuid,
+            description: `Configurer les signatures pour ${promo.nom}`
           }))
         );
-        
-      // Créer les boutons
+
+      // Créer les boutons d'action
       const createButton = new ButtonBuilder()
         .setCustomId('signature-create-button')
         .setLabel('Créer')
         .setStyle(ButtonStyle.Success)
         .setEmoji('✅');
-        
+
       const refreshButton = new ButtonBuilder()
         .setCustomId('signature-refresh-button')
         .setLabel('Rafraîchir')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('🔄');
-        
+
       // Assembler les composants
-      const selectRow = new ActionRowBuilder().addComponents(selectMenu);
-      const buttonRow = new ActionRowBuilder().addComponents(createButton, refreshButton);
-      
-      // Envoyer le message dans le canal d'administration
-      await adminChannel.send({
-        embeds: [embed],
-        components: [selectRow, buttonRow]
-      });
-      
-      // Informer l'utilisateur que le message a été créé
+      const row1 = new ActionRowBuilder().addComponents(selectMenu);
+      const row2 = new ActionRowBuilder().addComponents(createButton, refreshButton);
+
+      // Envoyer le message
       await interaction.editReply({
-        content: `Le message de configuration des signatures a été créé dans le canal <#${adminChannelId}>.`,
-        ephemeral: true
+        embeds: [signatureEmbed],
+        components: [row1, row2]
       });
-      
-      logger.info(`${interaction.user.tag} a créé un message de configuration des signatures dans le canal ${adminChannel.name}`);
+
+      logger.info(`Message de configuration de signature créé par ${interaction.user.tag}`);
     } catch (error) {
-      logger.error(`Erreur lors de la création du message de configuration: ${error.message}`);
-      await interaction.editReply({
-        content: 'Une erreur est survenue lors de la création du message de configuration.',
-        ephemeral: true
-      });
+      logger.error(`Erreur lors de la création du message de configuration: ${error.message}`, error);
+      
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: `Une erreur est survenue lors de la création du message de configuration: ${error.message}`,
+          ephemeral: true
+        }).catch(err => logger.error('Erreur lors de l\'édition de la réponse après erreur:', err));
+      } else if (!interaction.replied) {
+        await interaction.reply({
+          content: `Une erreur est survenue lors de la création du message de configuration: ${error.message}`,
+          ephemeral: true
+        }).catch(err => logger.error('Erreur lors de la réponse après erreur:', err));
+      }
     }
   }
 }; 
