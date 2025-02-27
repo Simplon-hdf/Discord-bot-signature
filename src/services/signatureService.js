@@ -1,4 +1,3 @@
-const promotionsFixture = require('../../tests/signPromotionFixture.json');
 const logger = require('../utils/logger');
 
 /**
@@ -15,43 +14,46 @@ class SignatureService {
    * @returns {Promise<Array>} Les promotions disponibles
    */
   async getPromotions() {
-    try {
-      logger.info('Tentative de récupération des promotions depuis l\'API');
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.apiTimeout);
+    logger.info('Récupération des promotions depuis l\'API');
+    
+    // Utiliser une promesse pour gérer le timeout correctement
+    return new Promise(async (resolve, reject) => {
+      // Configurer un timeout
+      const timeoutId = setTimeout(() => {
+        reject(new Error('La requête API a expiré après 5 secondes'));
+      }, this.apiTimeout);
       
       try {
-        const response = await fetch(`${this.apiBaseUrl}/signature/promotions`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          signal: controller.signal
-        });
-
-        if (!response.ok) {
-          throw new Error(`Erreur API: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        logger.info(`${data.promotions.length} promotions récupérées avec succès`);
-        return data.promotions;
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          throw new Error('La requête a expiré (timeout)');
-        }
-        throw error;
-      } finally {
+        // Exécuter la requête API
+        const response = await fetch(`${this.apiBaseUrl}/signature/promotions`);
+        
+        // Annuler le timeout
         clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`L'API a retourné une erreur: ${response.status} ${response.statusText}`);
+        }
+        
+        const responseData = await response.json();
+        logger.info(`Données reçues de l'API: ${JSON.stringify(responseData)}`);
+        
+        // Vérifier la structure de la réponse et extraire les promotions
+        if (!responseData || !responseData.data || !responseData.data.promotions || !Array.isArray(responseData.data.promotions)) {
+          throw new Error('Format de réponse API incorrect. La réponse doit contenir data.promotions[]');
+        }
+        
+        const promotions = responseData.data.promotions;
+        logger.info(`${promotions.length} promotions récupérées avec succès`);
+        resolve(promotions);
+      } catch (error) {
+        // Annuler le timeout en cas d'erreur
+        clearTimeout(timeoutId);
+        
+        logger.error(`Erreur lors de la récupération des promotions: ${error.message}`);
+        // Résoudre avec un tableau vide au lieu de rejeter la promesse
+        resolve([]);
       }
-    } catch (error) {
-      logger.warn(`Impossible d'accéder à l'API: ${error.message}`);
-      logger.info('Utilisation des données mockées');
-      
-      // Fallback sur les données mockées
-      return promotionsFixture.promotions;
-    }
+    });
   }
 }
 
