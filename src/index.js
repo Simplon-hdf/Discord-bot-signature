@@ -4,6 +4,43 @@ const logger = require('./utils/logger');
 const path = require('path');
 const fs = require('fs');
 
+// VERROU D'INSTANCE UNIQUE
+const lockFile = path.join(__dirname, '../.bot.lock');
+
+// Vérifier si le bot est déjà en cours d'exécution
+if (fs.existsSync(lockFile)) {
+  const pid = fs.readFileSync(lockFile, 'utf8');
+  logger.error(`Le bot semble déjà être en cours d'exécution (PID: ${pid}). Si ce n'est pas le cas, supprimez le fichier .bot.lock`);
+  process.exit(1);
+}
+
+// Créer le fichier de verrouillage avec le PID actuel
+fs.writeFileSync(lockFile, process.pid.toString());
+
+// Supprimer le fichier de verrouillage à la sortie du processus
+process.on('exit', () => {
+  try {
+    fs.unlinkSync(lockFile);
+    logger.info('Fichier de verrouillage supprimé');
+  } catch (err) {
+    // Ignorer les erreurs lors de la suppression
+  }
+});
+
+// Faire la même chose pour les autres signaux de terminaison
+['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => {
+  process.on(signal, () => {
+    logger.info(`Signal ${signal} reçu, arrêt en cours...`);
+    try {
+      fs.unlinkSync(lockFile);
+      logger.info('Fichier de verrouillage supprimé');
+    } catch (err) {
+      // Ignorer les erreurs lors de la suppression
+    }
+    process.exit(0);
+  });
+});
+
 // Vérifier que les variables d'environnement essentielles sont définies
 if (!process.env.TOKEN) {
   logger.error('Le token Discord n\'est pas défini dans les variables d\'environnement');
