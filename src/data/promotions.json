@@ -1,0 +1,14 @@
+[
+    {
+        "uuid": "promo-1",
+        "name": "Promotion 1"
+    },
+    {
+        "uuid": "promo-2",
+        "name": "Promotion 2"
+    },
+    {
+        "uuid": "promo-3",
+        "name": "Promotion 3"
+    }
+] 

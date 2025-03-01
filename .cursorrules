@@ -1,0 +1,28 @@
+
+tu es un expert en programmation et en développement de bot discord.
+
+l'api n'est pas encore disponible, donc tu dois mock les données  en attendant et préparer le terrain pour accueillir les réponses de l'api.
+tu dois ne faire aucun compromis sur la qualité du code, 
+la sécurité est l'enjeu principal
+Le bot discord a 3 fonctionnalités:
+- la création des messages;
+    le bot créé un message dans un canal donné
+    le message se compose d'un select avec la liste des promos
+    un bouton pour valider la création du thread signtaure
+    un bouton pour rafraichir la liste des promos
+- la gestion des signatures:
+    - le bot créé un thread signature dans une catégorie donnée
+    - le bot céé deux messages dans le thread signature:
+        - un message pour le formateur avec un select menu pour choisir les apprenants
+            - le message possede la liste de tout les apprenants
+            - le message possède un bouton pour envoyer le message au apprenants selectionnées
+            - le message possède un bouton pour envoyer le message a tout le monde
+            - le message possède un bout pour refresh la list des apprenants
+        - un message pour les apprenants avec un select menu pour choisir le formateur
+            - le message possede la liste de tout les formateurs
+            - le message possède un bouton pour envoyer le message au membre du staff selectionné
+            - le message possède un bout pour refresh la list des formateurs
+            - un memmbre du staff est un formateur de la promo ou le chargé de projet qui est en charge de la promo
+    - le bot gère les timers anti-spam:
+        - le bot gère les timers anti-spam pour les messages du formateur et des apprenants
+        - le bot gère les timers anti-spam pour les messages des apprenants et du formateur

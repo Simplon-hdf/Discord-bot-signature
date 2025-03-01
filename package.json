@@ -1,20 +1,25 @@
 {
-  "name": "discord-bot",
+  "name": "discord-signature-bot",
   "version": "1.0.0",
-  "description": "Bot Discord basique",
-  "main": "index.js",
+  "description": "Bot Discord pour la gestion des signatures",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "vitest"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.1.0",
+    "vitest": "^3.0.6"
   }
-} 
+}
