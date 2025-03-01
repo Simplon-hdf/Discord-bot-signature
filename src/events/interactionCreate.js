@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const logger = require('../utils/logger');
 const signatureService = require('../services/signatureService');
+const cooldownManager = require('../utils/cooldownManager');
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
 
 // Variables pour stocker les sélections
@@ -611,6 +612,21 @@ module.exports = {
         // Bouton pour envoyer un message aux apprenants sélectionnés
         else if (interaction.customId === 'send-to-selected-apprenants') {
           try {
+            // Vérifier le cooldown
+            const userId = interaction.user.id;
+            const actionType = 'send-dm-apprenants';
+            
+            if (cooldownManager.isOnCooldown(userId, actionType)) {
+              const remainingTime = cooldownManager.getRemainingCooldown(userId, actionType);
+              const formattedTime = cooldownManager.formatTimeRemaining(remainingTime);
+              
+              await interaction.reply({
+                content: `⏱️ Vous devez attendre **${formattedTime}** avant de pouvoir renvoyer un message aux apprenants.`,
+                ephemeral: true
+              });
+              return;
+            }
+            
             // Différer la mise à jour et non la réponse
             await interaction.deferUpdate();
             
@@ -698,19 +714,12 @@ module.exports = {
               }
             }
             
-            // Message de résultat pour l'utilisateur (privé)
-            let resultMessage = `✅ Message envoyé avec succès à ${successCount} apprenant(s).`;
-            if (errorCount > 0) {
-              resultMessage += `\n\n⚠️ Impossible d'envoyer le message à ${errorCount} apprenant(s):`;
-              resultMessage += `\n${errorMessages.join('\n')}`;
-              resultMessage += `\n\nRaisons possibles:`;
-              resultMessage += `\n- L'utilisateur a désactivé les messages privés venant du serveur`;
-              resultMessage += `\n- L'ID Discord (snowflake) n'est pas valide`;
-              resultMessage += `\n- Le bot n'a pas les permissions nécessaires`;
-            }
+            // À la fin, après succès, ajouter le cooldown
+            cooldownManager.setOnCooldown(userId, actionType);
             
-            await interaction.followUp({
-              content: resultMessage,
+            // Notification à l'utilisateur
+            await interaction.editReply({
+              content: `✅ Messages envoyés avec succès à ${successCount} apprenants! Vous pourrez renvoyer un message dans 5 minutes.`,
               ephemeral: true
             });
             
@@ -739,9 +748,25 @@ module.exports = {
         
         // Bouton pour envoyer un message à tous les apprenants
         else if (interaction.customId === 'send-to-all-apprenants') {
-          await interaction.deferReply({ flags: 64 });
-          
           try {
+            // Vérifier le cooldown
+            const userId = interaction.user.id;
+            const actionType = 'send-dm-apprenants';
+            
+            if (cooldownManager.isOnCooldown(userId, actionType)) {
+              const remainingTime = cooldownManager.getRemainingCooldown(userId, actionType);
+              const formattedTime = cooldownManager.formatTimeRemaining(remainingTime);
+              
+              await interaction.reply({
+                content: `⏱️ Vous devez attendre **${formattedTime}** avant de pouvoir renvoyer un message aux apprenants.`,
+                ephemeral: true
+              });
+              return;
+            }
+            
+            // Différer la mise à jour immédiatement
+            await interaction.deferReply({ ephemeral: true });
+            
             // Récupérer la promotion à partir du titre du message
             const embedTitle = interaction.message.embeds[0].title;
             const promoNom = embedTitle.split(':')[1].trim();
@@ -752,7 +777,7 @@ module.exports = {
             if (!promo) {
               await interaction.editReply({
                 content: `Impossible de trouver la promotion "${promoNom}"`,
-                flags: 64
+                ephemeral: true
               });
               return;
             }
@@ -790,9 +815,13 @@ module.exports = {
               }
             }
             
+            // À la fin, après succès, ajouter le cooldown
+            cooldownManager.setOnCooldown(userId, actionType);
+            
+            // Répondre à l'utilisateur
             await interaction.editReply({
-              content: `✅ Message envoyé avec succès à ${successCount} apprenant(s)${errorCount > 0 ? `\n⚠️ Impossible d'envoyer le message à ${errorCount} apprenant(s)` : ''}`,
-              flags: 64
+              content: `✅ Messages envoyés avec succès! Vous pourrez renvoyer un message dans 5 minutes.`,
+              ephemeral: true
             });
             
             // Enregistrer l'action dans le thread
@@ -804,7 +833,7 @@ module.exports = {
             logger.error(`Erreur lors de l'envoi des messages: ${error.message}`);
             await interaction.editReply({
               content: `Une erreur est survenue lors de l'envoi des messages: ${error.message}`,
-              flags: 64
+              ephemeral: true
             });
           }
         }
@@ -812,6 +841,27 @@ module.exports = {
         // Bouton pour envoyer un message au formateur sélectionné
         else if (interaction.customId === 'send-to-formateur') {
           try {
+            // Vérifier le cooldown
+            const userId = interaction.user.id;
+            const actionType = 'send-dm-formateur';
+            
+            logger.info(`Vérification du cooldown pour ${userId} sur l'action ${actionType}`);
+            
+            if (cooldownManager.isOnCooldown(userId, actionType)) {
+              const remainingTime = cooldownManager.getRemainingCooldown(userId, actionType);
+              const formattedTime = cooldownManager.formatTimeRemaining(remainingTime);
+              
+              logger.info(`L'utilisateur ${userId} est en cooldown pour ${actionType} (reste: ${formattedTime})`);
+              
+              await interaction.reply({
+                content: `⏱️ Vous devez attendre **${formattedTime}** avant de pouvoir renvoyer un message à un formateur.`,
+                ephemeral: true
+              });
+              return;
+            }
+            
+            logger.info(`L'utilisateur ${userId} n'est pas en cooldown pour ${actionType}`);
+            
             // Différer la mise à jour immédiatement
             await interaction.deferUpdate();
             
@@ -859,7 +909,7 @@ module.exports = {
                 
                 // Notifier l'utilisateur du succès
                 await interaction.followUp({
-                  content: `✅ Message envoyé avec succès au formateur ${user.tag}`,
+                  content: `✅ Message envoyé avec succès au formateur ${user.tag}. Vous pourrez renvoyer un message dans 5 minutes.`,
                   ephemeral: true
                 });
                 
@@ -900,6 +950,10 @@ module.exports = {
                 content: `⚠️ **Échec** : Impossible de trouver le formateur avec l'ID **${selectedFormateur}**\n> Raison : ${error.message}`
               });
             }
+            
+            // À la fin, après succès, ajouter le cooldown
+            cooldownManager.setOnCooldown(userId, actionType);
+            logger.info(`Cooldown défini pour ${userId} sur l'action ${actionType}`);
           } catch (error) {
             logger.error(`Erreur lors de l'envoi du message au formateur: ${error}`);
             await interaction.followUp({
