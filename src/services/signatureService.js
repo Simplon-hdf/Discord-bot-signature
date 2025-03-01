@@ -35,6 +35,7 @@ class SignatureService {
         }
         
         const responseData = await response.json();
+        console.log("RÉPONSE API BRUTE:", JSON.stringify(responseData));
         logger.info(`Données reçues de l'API: ${JSON.stringify(responseData)}`);
         
         // Vérifier la structure de la réponse et extraire les promotions
