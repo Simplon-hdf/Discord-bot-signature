@@ -57,6 +57,9 @@ module.exports = {
       if (isSelectMenu) {
         // Menu de sélection de promotion pour la liste des promos
         if (interaction.customId === 'select-promotion') {
+          // AJOUTER CETTE LIGNE - Confirmer l'interaction immédiatement
+          await interaction.deferUpdate();
+          
           const selectedPromoUuid = interaction.values[0];
           logger.info(`Promotion sélectionnée: ${selectedPromoUuid}`);
           
@@ -73,67 +76,55 @@ module.exports = {
         
         // Menu de sélection de promotion pour le message de configuration
         if (interaction.customId === 'signature-select-promotion') {
-          selectedPromotionUuid = interaction.values[0];
-          
-          // Trouver la promotion sélectionnée
           try {
+            await interaction.deferUpdate().catch(e => logger.error(`Erreur lors du deferUpdate: ${e.message}`));
+            
+            selectedPromotionUuid = interaction.values[0];
+            logger.info(`Promotion sélectionnée: ${selectedPromotionUuid}`);
+            
+            // Récupérer les promotions
             const promotions = await signatureService.getPromotions();
             const selectedPromo = promotions.find(promo => promo.uuid === selectedPromotionUuid);
             
             if (!selectedPromo) {
-              try {
-                await interaction.followUp({
-                  content: 'Impossible de trouver la promotion sélectionnée.',
-                  ephemeral: true
-                });
-              } catch (error) {
-                logger.error(`Erreur lors du followUp pour promotion non trouvée: ${error.message}`);
-              }
+              logger.error(`Promotion non trouvée: ${selectedPromotionUuid}`);
               return;
             }
             
-            if (!selectedPromo.apprenants || !Array.isArray(selectedPromo.apprenants) || selectedPromo.apprenants.length === 0) {
-              try {
-                await interaction.followUp({
-                  content: `La promotion ${selectedPromo.nom} n'a pas d'apprenants définis.`,
-                  ephemeral: true
-                });
-              } catch (error) {
-                logger.error(`Erreur lors du followUp pour apprenants manquants: ${error.message}`);
-              }
-              return;
-            }
+            // 1. Mettre à jour l'embed
+            const originalEmbed = interaction.message.embeds[0];
+            const updatedEmbed = EmbedBuilder.from(originalEmbed)
+              .setDescription(`Promotion sélectionnée: **${selectedPromo.nom}**\nUtilisez le bouton "Créer" pour générer le thread de signature.`)
+              .setFooter({ text: `Bot de Signature v1.0 | ${selectedPromo.apprenants.length} apprenants, ${selectedPromo.formateurs.length} formateurs` });
             
-            if (!selectedPromo.formateurs || !Array.isArray(selectedPromo.formateurs) || selectedPromo.formateurs.length === 0) {
-              try {
-                await interaction.followUp({
-                  content: `La promotion ${selectedPromo.nom} n'a pas de formateurs définis.`,
-                  ephemeral: true
-                });
-              } catch (error) {
-                logger.error(`Erreur lors du followUp pour formateurs manquants: ${error.message}`);
-              }
-              return;
-            }
+            // 2. Créer un nouveau menu de sélection avec le placeholder mis à jour
+            const updatedSelectMenu = new StringSelectMenuBuilder()
+              .setCustomId('signature-select-promotion')
+              .setPlaceholder(`▶️ Sélection actuelle: ${selectedPromo.nom}`)
+              .addOptions(
+                promotions.map(promo => ({
+                  label: promo.nom,
+                  value: promo.uuid,
+                  description: `Configurer les signatures pour ${promo.nom}`,
+                  // Marquer l'option sélectionnée
+                  default: promo.uuid === selectedPromotionUuid
+                }))
+              );
             
-            try {
-              await interaction.followUp({
-                content: `Vous avez sélectionné la promotion: ${selectedPromo.nom}. Cliquez sur "Créer" pour générer le thread de signature.`,
-                ephemeral: true
-              });
-            } catch (error) {
-              logger.error(`Erreur lors du followUp pour signature-select-promotion: ${error.message}`);
-            }
+            // 3. Créer de nouveaux composants
+            const row1 = new ActionRowBuilder().addComponents(updatedSelectMenu);
+            
+            // Récupérer la deuxième ligne (les boutons) du message original
+            const row2 = interaction.message.components[1];
+            
+            // 4. Mettre à jour le message
+            await interaction.message.edit({
+              embeds: [updatedEmbed],
+              components: [row1, row2]
+            }).catch(e => logger.error(`Erreur lors de la mise à jour du message: ${e.message}`));
+            
           } catch (error) {
-            logger.error('Erreur lors de la récupération des promotions:', error);
-            try {
-              await interaction.followUp({
-                content: 'Une erreur est survenue lors de la récupération des informations de la promotion.',
-                ephemeral: true
-              });
-            } catch (followUpError) {
-              logger.error(`Erreur lors du followUp pour erreur de récupération promo: ${followUpError.message}`);
-            }
+            logger.error(`Erreur complète: ${error.message}`, error);
           }
           return;
         }
@@ -187,6 +178,9 @@ module.exports = {
       if (isButton) {
         // Bouton pour rafraîchir la liste des promotions
         if (interaction.customId === 'signature-refresh-button') {
+          // AJOUTER CETTE LIGNE - Confirmer l'interaction immédiatement
+          await interaction.deferUpdate();
+          
           try {
             // Récupérer les promotions à jour
             const promotions = await signatureService.getPromotions();
