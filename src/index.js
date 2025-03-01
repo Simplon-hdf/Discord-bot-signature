@@ -9,9 +9,18 @@ const lockFile = path.join(__dirname, '../.bot.lock');
 
 // Vérifier si le bot est déjà en cours d'exécution
 if (fs.existsSync(lockFile)) {
-  const pid = fs.readFileSync(lockFile, 'utf8');
-  logger.error(`Le bot semble déjà être en cours d'exécution (PID: ${pid}). Si ce n'est pas le cas, supprimez le fichier .bot.lock`);
-  process.exit(1);
+  // Vérifier si c'est un dossier
+  const stat = fs.statSync(lockFile);
+  if (stat.isDirectory()) {
+    // Si c'est un dossier, le supprimer
+    fs.rmdirSync(lockFile, { recursive: true });
+    logger.warn(`Suppression du dossier .bot.lock qui causait une erreur`);
+  } else {
+    // C'est un fichier, lire le PID
+    const pid = fs.readFileSync(lockFile, 'utf8');
+    logger.error(`Le bot semble déjà être en cours d'exécution (PID: ${pid}). Si ce n'est pas le cas, supprimez le fichier .bot.lock`);
+    process.exit(1);
+  }
 }
 
 // Créer le fichier de verrouillage avec le PID actuel
