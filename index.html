@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Promotions</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        h2 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>Liste des Promotions</h1>
+    <div id="promotions"></div>
+
+    <script>
+        fetch('tests/signPromotionFixture.json')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('promotions');
+                console.log(data);
+                data.promotions.forEach(promo => {
+                    const promoDiv = document.createElement('div');
+                    promoDiv.innerHTML = `
+                        <h2>${promo.nom}</h2>
+                        <h3>Catégorie</h3>
+                        <table>
+                            <tr><th>Nom</th><td>${promo.category.nom}</td></tr>
+                            <tr><th>Snowflake</th><td>${promo.category.snowflake}</td></tr>
+                        </table>
+                        <h3>Chargé de Projet</h3>
+                        <table>
+                            <tr><th>Nom</th><td>${promo.chargeDeProjet.nom}</td></tr>
+                            <tr><th>Snowflake</th><td>${promo.chargeDeProjet.snowflake}</td></tr>
+                            <tr><th>Rôles</th><td>${promo.chargeDeProjet.roles.join(', ')}</td></tr>
+                        </table>
+                        <h3>Formateurs</h3>
+                        <table>
+                            <tr><th>Nom</th><th>Snowflake</th><th>Rôles</th></tr>
+                            ${promo.formateurs.map(formateur => `
+                                <tr>
+                                    <td>${formateur.nom}</td>
+                                    <td>${formateur.snowflake}</td>
+                                    <td>${formateur.roles.join(', ')}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+                        <h3>Apprenants</h3>
+                        <table>
+                            <tr><th>Nom</th><th>Snowflake</th><th>Rôles</th></tr>
+                            ${promo.apprenants.map(apprenant => `
+                                <tr>
+                                    <td>${apprenant.nom}</td>
+                                    <td>${apprenant.snowflake}</td>
+                                    <td>${apprenant.roles.join(', ')}</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+                    `;
+                    container.appendChild(promoDiv);
+                });
+            })
+            .catch(error => console.error('Erreur lors du chargement du fichier JSON:', error));
+    </script>
+</body>
+</html>

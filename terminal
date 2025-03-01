@@ -1,0 +1,3 @@
+mkdir discord-signature-bot
+cd discord-signature-bot
+npm init -y 

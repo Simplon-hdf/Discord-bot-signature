@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: discord-signature-bot
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    networks:
+      - signature-network
+
+volumes:
+  signature_data:
+
+networks:
+  signature-network:
+    driver: bridge 
